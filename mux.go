@@ -135,6 +135,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"mime"
@@ -144,6 +145,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Handle registers fn to handle paths of the form given by pattern.
@@ -245,10 +247,11 @@ func (ctxt *Context) handlePanic() {
 	if err := recover(); err != nil {
 		ctxt.w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		ctxt.w.WriteHeader(500)
-		fmt.Fprintf(ctxt.w, "panic: %s\n", err)
+		fmt.Fprintf(ctxt.w, "Error: %s\n", err)
+		log.Printf("panic: %s\n", err)
 		buf := make([]byte, 10000)
 		n := runtime.Stack(buf, false)
-		ctxt.w.Write(buf[:n])
+		log.Println(string(buf[:n]))
 	}
 }
 
@@ -311,6 +314,11 @@ func (ctxt *Context) ServeJSON(data interface{}) {
 	}
 	ctxt.Header().Set("Content-Type", "application/json")
 	ctxt.Write(encoded)
+}
+
+// ServeContent serves the request using the contents of the ReadSeeker.
+func (ctxt *Context) ServeContent(name string, modtime time.Time, content io.ReadSeeker) {
+	http.ServeContent(ctxt, ctxt.Request, name, modtime, content)
 }
 
 func handle(w http.ResponseWriter, req *http.Request) {
@@ -475,24 +483,42 @@ func (h *handler) setField(v reflect.Value, name, val string, index int, isPost 
 
 		switch fv.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			x, err := strconv.ParseInt(val, 0, fv.Type().Bits())
-			if err != nil {
-				return fmt.Errorf("invalid int %s=%s: %v", name, val, err)
+			var (
+				err error
+				x   int64
+			)
+			if val != "" {
+				x, err = strconv.ParseInt(val, 0, fv.Type().Bits())
+				if err != nil {
+					return fmt.Errorf("invalid int %s=%s: %v", name, val, err)
+				}
+				// println("parsed", val, "as", x)
 			}
-			println("parsed", val, "as", x)
 			fv.SetInt(x)
 
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-			x, err := strconv.ParseUint(val, 0, fv.Type().Bits())
-			if err != nil {
-				return fmt.Errorf("invalid uint %s=%s: %v", name, val, err)
+			var (
+				err error
+				x   uint64
+			)
+			if val != "" {
+				x, err = strconv.ParseUint(val, 0, fv.Type().Bits())
+				if err != nil {
+					return fmt.Errorf("invalid uint %s=%s: %v", name, val, err)
+				}
 			}
 			fv.SetUint(x)
 
 		case reflect.Float32, reflect.Float64:
-			x, err := strconv.ParseFloat(val, fv.Type().Bits())
-			if err != nil {
-				return fmt.Errorf("invalid float %s=%s: %v", name, val, err)
+			var (
+				err error
+				x   float64
+			)
+			if val != "" {
+				x, err = strconv.ParseFloat(val, fv.Type().Bits())
+				if err != nil {
+					return fmt.Errorf("invalid float %s=%s: %v", name, val, err)
+				}
 			}
 			fv.SetFloat(x)
 
